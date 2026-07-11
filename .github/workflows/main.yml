@@ -37,7 +37,7 @@ jobs:
       - name: Install build tools
         shell: pwsh
         run: |
-          choco install cmake ninja gettext wget 7zip -y --no-progress
+          choco install cmake ninja gettext -y --no-progress
 
           $gettextExe = Get-ChildItem "C:\Program Files\gettext-iconv" `
             -Recurse `
@@ -52,54 +52,26 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH `
             -Value $gettextExe.Directory.FullName
 
-      - name: Prepare Win32 wxWidgets
+      - name: Install wxWidgets via vcpkg
         shell: pwsh
-        working-directory: buildtree
         run: |
-          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
-          New-Item -ItemType Directory -Force $wxRoot | Out-Null
+          # Set the vcpkg triplet target to x86 Windows to match OpenCPN architecture requirements
+          $env:VCPKG_DEFAULT_TRIPLET = "x86-windows"
           
-          Write-Host "Downloading wxWidgets binaries safely via raw download targets..."
-          # Directly downloading via the original uncompressed stable releases asset channel with custom agent
-          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-          $client = New-Object System.Net.WebClient
-          $client.Headers.Add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
-          
-          Write-Host "Fetching Development Binaries..."
-          $client.DownloadFile("https://github.com", "$PWD\wx-win32.7z")
-          
-          Write-Host "Fetching Header Files..."
-          $client.DownloadFile("https://github.com", "$PWD\wx-headers.7z")
-
-          Write-Host "Extracting assets..."
-          7z x wx-win32.7z "-o$wxRoot" -y | Out-Null
-          7z x wx-headers.7z "-o$wxRoot" -y | Out-Null
-          
-          if (-not (Test-Path "$wxRoot\lib\vc14x_dll")) {
-             throw "wxWidgets extraction layer validation check failed."
-          }
+          Write-Host "Installing wxwidgets via pre-cached native vcpkg engine..."
+          vcpkg install wxwidgets:x86-windows
 
       - name: Configure
         shell: pwsh
         working-directory: buildtree
         run: |
-          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
-          $wxLib = "$wxRoot\lib\vc14x_dll"
-
-          if (-not (Test-Path $wxLib)) {
-            throw "wxWidgets library folder was not found: $wxLib"
-          }
-
-          echo "WXWIN=$wxRoot" >> $env:GITHUB_ENV
-
           New-Item -ItemType Directory -Force build | Out-Null
 
+          # Point CMake to the native runner vcpkg integration file path
           cmake -S . -B build -A Win32 `
             -DOCPN_TARGET=MSVC `
-            "-DwxWidgets_ROOT_DIR=$wxRoot" `
-            "-DwxWidgets_INCLUDE_DIRS=$wxRoot\include" `
-            "-DwxWidgets_LIB_DIR=$wxLib" `
-            -DwxWidgets_CONFIGURATION=mswu `
+            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x86-windows `
             -DwxWidgets_USE_STATIC=OFF `
             -DCMAKE_BUILD_TYPE=Release
 
@@ -107,9 +79,6 @@ jobs:
         shell: pwsh
         working-directory: buildtree
         run: |
-          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
-          $env:WXWIN = $wxRoot
-          
           cmake --build build `
             --config Release `
             --target voyage_eta_pi `
