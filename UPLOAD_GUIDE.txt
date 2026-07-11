@@ -1,0 +1,10 @@
+CLEAN PROJECT UPLOAD
+
+1. Create a new empty GitHub repository named VoyageETA_clean_pi.
+2. Upload every file and folder from this package to the repository root.
+3. Commit the files.
+4. Open Actions.
+5. Wait for Build Clean Voyage ETA to finish.
+6. Download the VoyageETA-Clean-Windows artifact.
+7. Extract it.
+8. Import VoyageETA-1.0.0-msvc-wx32.tar.gz in OpenCPN.
