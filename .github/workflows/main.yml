@@ -60,6 +60,7 @@ jobs:
 
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
+          # Restored full repository path inside the release endpoint URL
           $baseUrl = "https://github.com"
 
           wget -nv --no-check-certificate `
@@ -84,12 +85,10 @@ jobs:
             throw "wxWidgets library folder was not found: $wxLib"
           }
 
-          # Set global environment variable for sub-compilers
           echo "WXWIN=$wxRoot" >> $env:GITHUB_ENV
 
           New-Item -ItemType Directory -Force build | Out-Null
 
-          # Added include directories explicitly to resolve compilation blockades
           cmake -S . -B build -A Win32 `
             -DOCPN_TARGET=MSVC `
             "-DwxWidgets_ROOT_DIR=$wxRoot" `
@@ -104,7 +103,6 @@ jobs:
         working-directory: buildtree
         run: |
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
-          # Ensure WXWIN fallback environment remains live during child tasks
           $env:WXWIN = $wxRoot
           
           cmake --build build `
