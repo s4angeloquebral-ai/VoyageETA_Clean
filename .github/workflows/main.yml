@@ -1,0 +1,221 @@
+name: Build Clean Voyage ETA
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+jobs:
+  build:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout clean Voyage ETA project
+        uses: actions/checkout@v4
+        with:
+          path: voyage_eta_src
+
+      - name: Checkout ShipDriver build template
+        uses: actions/checkout@v4
+        with:
+          repository: Rasbats/shipdriver_pi
+          ref: master
+          path: buildtree
+          submodules: recursive
+
+      - name: Replace template plugin files
+        shell: pwsh
+        run: |
+          Remove-Item "buildtree\src\*" -Recurse -Force
+          Copy-Item "voyage_eta_src\src\*" "buildtree\src\" -Force
+          Copy-Item "voyage_eta_src\Plugin.cmake" "buildtree\Plugin.cmake" -Force
+          Copy-Item "voyage_eta_src\README.md" "buildtree\README.md" -Force
+          Copy-Item "voyage_eta_src\LICENSE" "buildtree\COPYING" -Force
+
+      - name: Install build tools
+        shell: pwsh
+        run: |
+          choco install cmake ninja gettext wget 7zip -y --no-progress
+
+          $gettextExe = Get-ChildItem "C:\Program Files\gettext-iconv" `
+            -Recurse `
+            -Filter "msgfmt.exe" `
+            -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+
+          if (-not $gettextExe) {
+            throw "msgfmt.exe was not found."
+          }
+
+          Add-Content -Path $env:GITHUB_PATH `
+            -Value $gettextExe.Directory.FullName
+
+      - name: Prepare Win32 wxWidgets
+        shell: pwsh
+        working-directory: buildtree
+        run: |
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+
+          New-Item -ItemType Directory -Force $wxRoot | Out-Null
+
+          $baseUrl = "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1"
+
+          wget -nv --no-check-certificate `
+            "$baseUrl/wxMSW-3.2.1_vc14x_Dev.7z" `
+            -O wx-win32.7z
+
+          wget -nv --no-check-certificate `
+            "$baseUrl/wxWidgets-3.2.1-headers.7z" `
+            -O wx-headers.7z
+
+          7z x wx-win32.7z "-o$wxRoot" -y
+          7z x wx-headers.7z "-o$wxRoot" -y
+
+      - name: Configure
+        shell: pwsh
+        working-directory: buildtree
+        run: |
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+          $wxLib = "$wxRoot\lib\vc14x_dll"
+
+          if (-not (Test-Path $wxLib)) {
+            throw "wxWidgets library folder was not found: $wxLib"
+          }
+
+          New-Item -ItemType Directory -Force build | Out-Null
+
+          cmake -S . -B build -A Win32 `
+            -DOCPN_TARGET=MSVC `
+            "-DwxWidgets_ROOT_DIR=$wxRoot" `
+            "-DwxWidgets_LIB_DIR=$wxLib" `
+            -DwxWidgets_CONFIGURATION=mswu `
+            -DwxWidgets_USE_STATIC=OFF `
+            -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        shell: pwsh
+        working-directory: buildtree
+        run: |
+          cmake --build build --config Release --parallel 2
+
+      - name: Verify clean plugin DLL
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem "buildtree\build" `
+            -Recurse `
+            -Filter "voyage_eta_pi.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "voyage_eta_pi.dll was not found."
+          }
+
+          Write-Host "Plugin DLL found:"
+          Write-Host $dll.FullName
+          Write-Host "DLL size:"
+          Write-Host $dll.Length
+
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+
+          $vsPath = & $vswhere `
+            -latest `
+            -products * `
+            -property installationPath
+
+          $dumpbin = Get-ChildItem "$vsPath\VC\Tools\MSVC" `
+            -Recurse `
+            -Filter "dumpbin.exe" |
+            Where-Object {
+              $_.FullName -match "Hostx64\\x64\\dumpbin.exe$"
+            } |
+            Select-Object -First 1
+
+          if (-not $dumpbin) {
+            throw "dumpbin.exe was not found."
+          }
+
+          $headers = & $dumpbin.FullName /headers $dll.FullName | Out-String
+          $exports = & $dumpbin.FullName /exports $dll.FullName | Out-String
+
+          Write-Host $headers
+          Write-Host $exports
+
+          if ($headers -notmatch "machine \(x86\)") {
+            throw "Plugin DLL is not an x86 Windows DLL."
+          }
+
+          if ($exports -notmatch "create_pi") {
+            throw "create_pi export is missing."
+          }
+
+          if ($exports -notmatch "destroy_pi") {
+            throw "destroy_pi export is missing."
+          }
+
+      - name: Create importable tarball
+        shell: pwsh
+        run: |
+          $dll = Get-ChildItem "buildtree\build" `
+            -Recurse `
+            -Filter "voyage_eta_pi.dll" |
+            Select-Object -First 1
+
+          if (-not $dll) {
+            throw "voyage_eta_pi.dll was not found for packaging."
+          }
+
+          New-Item -ItemType Directory -Force "package\plugins" | Out-Null
+
+          Copy-Item `
+            $dll.FullName `
+            "package\plugins\voyage_eta_pi.dll" `
+            -Force
+
+          $metadata = @(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<opencpn-plugin>'
+            '  <name>Voyage ETA</name>'
+            '  <version>1.0.0</version>'
+            '  <release>1</release>'
+            '  <summary>ETA to three selected route waypoints</summary>'
+            '  <description>Shows ETA to three selected waypoints using live SOG or manual speed.</description>'
+            '  <author>Captain Domingo Angelo Quebral Jr</author>'
+            '  <api-version>1.18</api-version>'
+            '  <target>msvc-wx32</target>'
+            '  <target-version>10.0.20348</target-version>'
+            '  <tarball-url>VoyageETA-1.0.0-msvc-wx32.tar.gz</tarball-url>'
+            '  <info-url>https://github.com/s4angeloquebral-ai/VoyageETA_Clean</info-url>'
+            '</opencpn-plugin>'
+          )
+
+          $metadata |
+            Set-Content `
+              "package\metadata.xml" `
+              -Encoding UTF8
+
+          tar -czf `
+            "VoyageETA-1.0.0-msvc-wx32.tar.gz" `
+            -C package .
+
+          New-Item -ItemType Directory -Force artifacts | Out-Null
+
+          Copy-Item `
+            "VoyageETA-1.0.0-msvc-wx32.tar.gz" `
+            artifacts\ `
+            -Force
+
+          Copy-Item `
+            $dll.FullName `
+            artifacts\ `
+            -Force
+
+          Write-Host "Artifact files:"
+          Get-ChildItem artifacts
+
+      - name: Upload clean Voyage ETA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VoyageETA-Clean-Windows
+          path: artifacts
