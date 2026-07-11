@@ -60,7 +60,7 @@ jobs:
 
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
-          $baseUrl = "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1"
+          $baseUrl = "https://github.com"
 
           wget -nv --no-check-certificate `
             "$baseUrl/wxMSW-3.2.1_vc14x_Dev.7z" `
@@ -84,11 +84,16 @@ jobs:
             throw "wxWidgets library folder was not found: $wxLib"
           }
 
+          # Set global environment variable for sub-compilers
+          echo "WXWIN=$wxRoot" >> $env:GITHUB_ENV
+
           New-Item -ItemType Directory -Force build | Out-Null
 
+          # Added include directories explicitly to resolve compilation blockades
           cmake -S . -B build -A Win32 `
             -DOCPN_TARGET=MSVC `
             "-DwxWidgets_ROOT_DIR=$wxRoot" `
+            "-DwxWidgets_INCLUDE_DIRS=$wxRoot\include" `
             "-DwxWidgets_LIB_DIR=$wxLib" `
             -DwxWidgets_CONFIGURATION=mswu `
             -DwxWidgets_USE_STATIC=OFF `
@@ -98,6 +103,10 @@ jobs:
         shell: pwsh
         working-directory: buildtree
         run: |
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+          # Ensure WXWIN fallback environment remains live during child tasks
+          $env:WXWIN = $wxRoot
+          
           cmake --build build `
             --config Release `
             --target voyage_eta_pi `
@@ -169,17 +178,14 @@ jobs:
             throw "voyage_eta_pi.dll was not found for packaging."
           }
 
-          # 1. Clear out any old paths and create pristine nested folders
           if (Test-Path "package") { Remove-Item "package" -Recurse -Force }
           New-Item -ItemType Directory -Force "package\plugins" | Out-Null
 
-          # 2. Inject DLL directly inside target package folders first
           Copy-Item `
             $dll.FullName `
             "package\plugins\voyage_eta_pi.dll" `
             -Force
 
-          # 3. Create manifest structure
           $metadata = @(
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<opencpn-plugin>'
@@ -193,7 +199,7 @@ jobs:
             '  <target>msvc-wx32</target>'
             '  <target-version>10.0.20348</target-version>'
             '  <tarball-url>VoyageETA-1.0.0-msvc-wx32.tar.gz</tarball-url>'
-            '  <info-url>https://github.com/s4angeloquebral-ai/VoyageETA_Clean</info-url>'
+            '  <info-url>https://github.com</info-url>'
             '</opencpn-plugin>'
           )
 
@@ -202,12 +208,10 @@ jobs:
               "package\metadata.xml" `
               -Encoding UTF8
 
-          # 4. Generate compressed distribution payload
           tar -czf `
             "VoyageETA-1.0.0-msvc-wx32.tar.gz" `
             -C package .
 
-          # 5. Route assets to output workspace
           if (Test-Path "artifacts") { Remove-Item "artifacts" -Recurse -Force }
           New-Item -ItemType Directory -Force artifacts | Out-Null
 
