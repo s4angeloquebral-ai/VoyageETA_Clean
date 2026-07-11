@@ -57,19 +57,11 @@ jobs:
         working-directory: buildtree
         run: |
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
-
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
-          # Restored full repository path inside the release endpoint URL
-          $baseUrl = "https://github.com"
-
-          wget -nv --no-check-certificate `
-            "$baseUrl/wxMSW-3.2.1_vc14x_Dev.7z" `
-            -O wx-win32.7z
-
-          wget -nv --no-check-certificate `
-            "$baseUrl/wxWidgets-3.2.1-headers.7z" `
-            -O wx-headers.7z
+          # Download files directly using absolute URLs to avoid string truncation
+          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z"
+          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-headers.7z"
 
           7z x wx-win32.7z "-o$wxRoot" -y
           7z x wx-headers.7z "-o$wxRoot" -y
