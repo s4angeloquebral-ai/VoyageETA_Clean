@@ -94,11 +94,14 @@ jobs:
             -DwxWidgets_USE_STATIC=OFF `
             -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build
+      - name: Build plugin only
         shell: pwsh
         working-directory: buildtree
         run: |
-          cmake --build build --config Release --parallel 2
+          cmake --build build `
+            --config Release `
+            --target voyage_eta_pi `
+            --parallel 2
 
       - name: Verify clean plugin DLL
         shell: pwsh
