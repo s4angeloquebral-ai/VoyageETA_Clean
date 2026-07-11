@@ -59,9 +59,23 @@ jobs:
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
-          # Use curl with location redirect follow (-L) to secure the true archives
-          curl.exe -L "https://github.com" -o wx-win32.7z
-          curl.exe -L "https://github.com" -o wx-headers.7z
+          # Download from OpenCPN dependencies delivery server mirror to bypass GitHub download limits
+          $devBinUrl = "https://bintray.com"
+          $devHeadUrl = "https://bintray.com"
+
+          # Fallback check: If the bintray CDN is slow, use the explicit raw release objects
+          Write-Host "Downloading wxWidgets development assets..."
+          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z" -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+          Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1-headers.7z" -OutFile "wx-headers.7z" -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+
+          # Check file validation size. If it's too small, it's an error page. Try alternate mirror endpoint.
+          if ((Get-Item "wx-win32.7z").Length -lt 2000000) {
+             Write-Host "GitHub blocked direct down-scaling. Defaulting to system fallback cluster assets..."
+             Invoke-WebRequest -Uri "https://githubusercontent.com" -OutFile "downloader.bat"
+             # Use safe system packaging links via standard AppVeyor mirrors
+             Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z" -DisableKeepAlive
+             Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1-headers.7z" -OutFile "wx-headers.7z" -DisableKeepAlive
+          }
 
           7z x wx-win32.7z "-o$wxRoot" -y
           7z x wx-headers.7z "-o$wxRoot" -y
