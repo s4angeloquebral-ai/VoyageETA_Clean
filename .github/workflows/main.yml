@@ -52,26 +52,59 @@ jobs:
           Add-Content -Path $env:GITHUB_PATH `
             -Value $gettextExe.Directory.FullName
 
-      - name: Install wxWidgets via vcpkg
+      - name: Setup wxWidgets Cache
+        id: cache-wxwidgets
+        uses: actions/cache@v4
+        with:
+          path: buildtree/cache/wxWidgets-3.2.1
+          key: ${{ runner.os }}-wxwidgets-3.2.1-v1
+
+      - name: Compile wxWidgets from Source (Fallback)
+        if: steps.cache-wxwidgets.outputs.cache-hit != 'true'
         shell: pwsh
+        working-directory: buildtree
         run: |
-          # Set the vcpkg triplet target to x86 Windows to match OpenCPN architecture requirements
-          $env:VCPKG_DEFAULT_TRIPLET = "x86-windows"
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+          New-Item -ItemType Directory -Force $wxRoot | Out-Null
           
-          Write-Host "Installing wxwidgets via pre-cached native vcpkg engine..."
-          vcpkg install wxwidgets:x86-windows
+          Write-Host "Cloning wxWidgets source directly to bypass archive restrictions..."
+          git clone --depth 1 --branch v3.2.1 https://github.com wx_source
+          
+          Write-Host "Configuring native Win32 compilation..."
+          cmake -S wx_source -B wx_build -G "Visual Studio 17 2022" -A Win32 `
+            -DwxBUILD_SHARED=ON `
+            -DwxBUILD_MONOLITHIC=OFF `
+            -DCMAKE_INSTALL_PREFIX="$wxRoot"
+            
+          Write-Host "Compiling framework binaries..."
+          cmake --build wx_build --config Release --target install --parallel 2
 
       - name: Configure
         shell: pwsh
         working-directory: buildtree
         run: |
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+          $wxLib = "$wxRoot\lib\vc_x86_dll"
+          
+          if (-not (Test-Path $wxLib)) {
+             # Fallback folder routing if path mapping changes between versions
+             $wxLib = "$wxRoot\lib\vc14x_dll"
+          }
+          if (-not (Test-Path $wxLib)) {
+             # Make sure it connects seamlessly to whatever framework location exists
+             $wxLib = (Get-ChildItem "$wxRoot\lib" -Directory | Select-Object -First 1).FullName
+          }
+
+          echo "WXWIN=$wxRoot" >> $env:GITHUB_ENV
+
           New-Item -ItemType Directory -Force build | Out-Null
 
-          # Point CMake to the native runner vcpkg integration file path
           cmake -S . -B build -A Win32 `
             -DOCPN_TARGET=MSVC `
-            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DVCPKG_TARGET_TRIPLET=x86-windows `
+            "-DwxWidgets_ROOT_DIR=$wxRoot" `
+            "-DwxWidgets_INCLUDE_DIRS=$wxRoot\include" `
+            "-DwxWidgets_LIB_DIR=$wxLib" `
+            -DwxWidgets_CONFIGURATION=mswu `
             -DwxWidgets_USE_STATIC=OFF `
             -DCMAKE_BUILD_TYPE=Release
 
@@ -79,6 +112,9 @@ jobs:
         shell: pwsh
         working-directory: buildtree
         run: |
+          $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
+          $env:WXWIN = $wxRoot
+          
           cmake --build build `
             --config Release `
             --target voyage_eta_pi `
