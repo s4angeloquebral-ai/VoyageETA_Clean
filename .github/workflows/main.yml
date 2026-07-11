@@ -59,22 +59,15 @@ jobs:
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
-          # Download from OpenCPN dependencies delivery server mirror to bypass GitHub download limits
-          $devBinUrl = "https://bintray.com"
-          $devHeadUrl = "https://bintray.com"
+          Write-Host "Downloading wxWidgets from OpenCPN Community Cloud Mirror..."
+          
+          # Using verified OpenCPN host links that bypass GitHub security limits entirely
+          Invoke-WebRequest -Uri "https://opencpn.org" -OutFile "wx-win32.7z"
+          Invoke-WebRequest -Uri "https://opencpn.org" -OutFile "wx-headers.7z"
 
-          # Fallback check: If the bintray CDN is slow, use the explicit raw release objects
-          Write-Host "Downloading wxWidgets development assets..."
-          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z" -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-          Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1-headers.7z" -OutFile "wx-headers.7z" -UserAgent "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
-
-          # Check file validation size. If it's too small, it's an error page. Try alternate mirror endpoint.
+          # Verify files downloaded with meaningful content size
           if ((Get-Item "wx-win32.7z").Length -lt 2000000) {
-             Write-Host "GitHub blocked direct down-scaling. Defaulting to system fallback cluster assets..."
-             Invoke-WebRequest -Uri "https://githubusercontent.com" -OutFile "downloader.bat"
-             # Use safe system packaging links via standard AppVeyor mirrors
-             Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z" -DisableKeepAlive
-             Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v3.2.1/wxWidgets-3.2.1-headers.7z" -OutFile "wx-headers.7z" -DisableKeepAlive
+            throw "Download failed or file corrupted from target endpoint mirror."
           }
 
           7z x wx-win32.7z "-o$wxRoot" -y
