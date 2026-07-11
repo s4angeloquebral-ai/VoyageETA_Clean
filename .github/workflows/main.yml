@@ -59,15 +59,24 @@ jobs:
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
           
-          Write-Host "Downloading precompiled OpenCPN-ready wxWidgets bundle..."
-          # Directly pulls down a working prepackaged ZIP archive instead of 7z splits
-          Invoke-WebRequest -Uri "https://github.com" -OutFile "wxMSW.zip"
+          Write-Host "Downloading wxWidgets binaries safely via raw download targets..."
+          # Directly downloading via the original uncompressed stable releases asset channel with custom agent
+          [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+          $client = New-Object System.Net.WebClient
+          $client.Headers.Add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
           
-          Write-Host "Extracting compilation assets..."
-          7z x wxMSW.zip "-o$wxRoot" -y | Out-Null
+          Write-Host "Fetching Development Binaries..."
+          $client.DownloadFile("https://github.com", "$PWD\wx-win32.7z")
+          
+          Write-Host "Fetching Header Files..."
+          $client.DownloadFile("https://github.com", "$PWD\wx-headers.7z")
+
+          Write-Host "Extracting assets..."
+          7z x wx-win32.7z "-o$wxRoot" -y | Out-Null
+          7z x wx-headers.7z "-o$wxRoot" -y | Out-Null
           
           if (-not (Test-Path "$wxRoot\lib\vc14x_dll")) {
-             throw "wxWidgets binary directory tree extraction failed."
+             throw "wxWidgets extraction layer validation check failed."
           }
 
       - name: Configure
