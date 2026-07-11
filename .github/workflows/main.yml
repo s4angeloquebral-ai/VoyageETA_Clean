@@ -59,9 +59,9 @@ jobs:
           $wxRoot = "$PWD\cache\wxWidgets-3.2.1"
           New-Item -ItemType Directory -Force $wxRoot | Out-Null
 
-          # Download files directly using absolute URLs to avoid string truncation
-          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-win32.7z"
-          Invoke-WebRequest -Uri "https://github.com" -OutFile "wx-headers.7z"
+          # Use curl with location redirect follow (-L) to secure the true archives
+          curl.exe -L "https://github.com" -o wx-win32.7z
+          curl.exe -L "https://github.com" -o wx-headers.7z
 
           7z x wx-win32.7z "-o$wxRoot" -y
           7z x wx-headers.7z "-o$wxRoot" -y
