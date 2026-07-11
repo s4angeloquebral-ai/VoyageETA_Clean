@@ -169,13 +169,17 @@ jobs:
             throw "voyage_eta_pi.dll was not found for packaging."
           }
 
+          # 1. Clear out any old paths and create pristine nested folders
+          if (Test-Path "package") { Remove-Item "package" -Recurse -Force }
           New-Item -ItemType Directory -Force "package\plugins" | Out-Null
 
+          # 2. Inject DLL directly inside target package folders first
           Copy-Item `
             $dll.FullName `
             "package\plugins\voyage_eta_pi.dll" `
             -Force
 
+          # 3. Create manifest structure
           $metadata = @(
             '<?xml version="1.0" encoding="UTF-8"?>'
             '<opencpn-plugin>'
@@ -198,10 +202,13 @@ jobs:
               "package\metadata.xml" `
               -Encoding UTF8
 
+          # 4. Generate compressed distribution payload
           tar -czf `
             "VoyageETA-1.0.0-msvc-wx32.tar.gz" `
             -C package .
 
+          # 5. Route assets to output workspace
+          if (Test-Path "artifacts") { Remove-Item "artifacts" -Recurse -Force }
           New-Item -ItemType Directory -Force artifacts | Out-Null
 
           Copy-Item `
